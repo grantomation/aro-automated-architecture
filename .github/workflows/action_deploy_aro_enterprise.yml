@@ -1,0 +1,235 @@
+name: ARO enterprise architecture
+on: [workflow_dispatch]
+env:
+  LOCATION: australiaeast
+  HUB_VNET: hub-vnet
+  SPOKE_VNET: spoke-vnet
+  FW_PRIVATE_IP: '10.0.0.4'
+  ROUTE_TABLE_NAME: 'aro-udr'
+  CLUSTER_NAME: 'aro-cluster'
+
+jobs: 
+  hub_networking:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@main
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: hub networking
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/hub_network.bicep
+        parameters: >
+          ./action_params/hub_network.parameters.json
+          location="${{ env.LOCATION }}"
+          hubVnetName="${{ env.HUB_VNET }}"
+        deploymentName: hub-networking-github-actions
+
+  deploy_firewall:
+    needs: hub_networking
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@main
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: deploy_jumpbox
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/firewall.bicep
+        parameters: >
+          ./action_params/firewall.parameters.json
+          location="${{ env.LOCATION }}"
+          hubVnetName="${{ env.HUB_VNET }}"
+          fwPrivateIP="${{ env.FW_PRIVATE_IP }}"
+        deploymentName: firewall-github-actions
+
+  user_defined_routing:
+    needs: deploy_firewall
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@main
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: create_route
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.SPOKE_RG }}
+        template: ./modules/routing_table.bicep
+        parameters: >
+          ./action_params/routing.parameters.json
+          location="${{ env.LOCATION }}"
+          fwPrivateIP="${{ env.FW_PRIVATE_IP }}"
+          routeTableName="${{ env.ROUTE_TABLE_NAME }}"
+        deploymentName: udr-github-actions
+    
+  spoke_networking:
+    needs: user_defined_routing
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@main
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: spoke networking
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.SPOKE_RG }}
+        template: ./modules/spoke_network.bicep
+        parameters: >
+          ./action_params/spoke_networking.parameters.json
+          spoke_rg="${{ secrets.SPOKE_RG }}"
+          location="${{ env.LOCATION }}"
+          spokeVnetName="${{ env.SPOKE_VNET }}"
+          routeTableName="${{ env.ROUTE_TABLE_NAME }}"
+        deploymentName: spoke-networking-github-actions
+
+  setup_peering:
+    needs: [hub_networking, spoke_networking]
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@main
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: hub_peering
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/peering.bicep
+        parameters: >
+          localVnetName="${{ env.HUB_VNET }}"
+          remoteVnetName="${{ env.SPOKE_VNET }}"
+          rgToPeer="${{ secrets.SPOKE_RG }}"
+        deploymentName: hub-peering-github-actions
+
+    - name: spoke_peering
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.SPOKE_RG }}
+        template: ./modules/peering.bicep
+        parameters: >
+          localVnetName="${{ env.SPOKE_VNET }}" 
+          remoteVnetName="${{ env.HUB_VNET }}" 
+          rgToPeer="${{ secrets.HUB_RG }}"
+        deploymentName: spoke-peering-github-actions
+
+  deploy_aro: 
+    needs: spoke_networking
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@main
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: aro_cluster
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.SPOKE_RG }}
+        template: ./modules/aro_cluster.bicep
+        parameters: >
+          ./action_params/aro.parameters.json 
+          pullSecret="${{ secrets.PULL_SECRET }}"
+          clusterName="${{ env.CLUSTER_NAME }}"
+          location="${{ env.LOCATION }}"
+          aadClientId="${{ secrets.AAD_CLIENT_ID }}"
+          aadClientSecret="${{ secrets.AAD_CLIENT_SECRET }}"
+          aadObjectId="${{ secrets.AAD_OBJECT_ID }}"
+          rpObjectId="${{ secrets.ARO_SP_OB_ID }}"
+          spokeVnetName="${{ env.SPOKE_VNET }}"
+        deploymentName: aro-github-actions
+
+  deploy_bastion:
+    needs: hub_networking
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@main
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: deploy_bastion
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/bastion.bicep
+        parameters: >
+          ./action_params/bastion.parameters.json
+          location="${{ env.LOCATION }}"
+          hubVnetName="${{ env.HUB_VNET }}"
+        deploymentName: bastion-github-actions
+
+  deploy_jumpbox:
+    needs: hub_networking
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@main
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: deploy_jumpbox
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/jumpbox.bicep
+        parameters: > 
+          ./action_params/jumpbox.parameters.json
+          location="${{ env.LOCATION }}" 
+          clusterName="{{ env.CLUSTER_NAME }}" 
+          spoke_rg="${{ secrets.SPOKE_RG }}" 
+          hubVnetName="${{ env.HUB_VNET }}" 
+          adminUsername="${{ secrets.JUMPBOX_ADMIN_USER }}" 
+          adminPassword="${{ secrets.JUMPBOX_ADMIN_PWD }}"
+        deploymentName: aro-github-actions

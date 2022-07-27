@@ -1,0 +1,52 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "tags": {
+        "value": {
+            "env": "dev",
+            "dept": "openshift"
+        }
+      },
+      "domain": {
+        "value": "aro-domain"
+      },
+      "controlPlaneVnetName": {
+        "value": "controlplane"
+      },
+      "computeVnetName": {
+        "value": "compute"
+      },
+      "apiServerVisibility": {
+        "value": "Private"
+      },
+      "ingressVisibility": {
+        "value": "Private"
+      },
+      "fipsValidatedModules": {
+        "value": "Enabled"
+      },
+      "encryptionAtHost": {
+        "value": "Disabled"
+      },
+      "computeNodeCount": {
+        "value": 3
+      },
+      "computeVmDiskSize": {
+        "value": 128
+      },
+      "controlPlaneVmSize": {
+        "value": "Standard_D8s_v3"
+      },
+      "computeVmSize": {
+        "value": "Standard_D4s_v3"
+      },
+      "serviceCidr": {
+        "value": "172.30.0.0/16"
+      },
+      "podCidr": {
+        "value": "10.128.0.0/14"
+      }
+    }
+  }
+  
