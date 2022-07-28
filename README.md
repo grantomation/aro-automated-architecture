@@ -46,7 +46,7 @@ Modify the location to suit your desired Azure region and then run the following
 ```
 $ az login
 
-$ az deployment sub create -f ./deploy_azcli/aro_enterprise.bicep --parameters @./deploy_local_subscription_scope/aro_enterprise.parameters.json --parameters pullSecret=@pull-secret.json -l australiaeast -c 
+$ az deployment sub create -f ./deploy_azcli/aro_enterprise.bicep --parameters ./deploy_azcli/aro_enterprise.parameters.json --parameters pullSecret=@pull-secret.json -l australiaeast -c 
 
 ```
 
