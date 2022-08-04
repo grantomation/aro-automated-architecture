@@ -8,7 +8,10 @@ param jumpbox_image_offer string
 param jumpbox_image_sku string
 param jumpbox_image_version string
 param adminUsername string
+
+@secure()
 param adminPassword string
+
 param clusterName string
 param spoke_rg string
 
