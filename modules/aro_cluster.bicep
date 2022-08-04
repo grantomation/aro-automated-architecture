@@ -1,14 +1,24 @@
+@secure()
+param pullSecret string
+
+@secure()
+param aadClientId string
+
+@secure()
+param aadClientSecret string
+
+@secure()
+param aadObjectId string
+
+@secure()
+param rpObjectId string
+
 param location string
 param clusterName string
 param tags object
 param domain string
-param pullSecret string
 param podCidr string
 param serviceCidr string
-param aadClientId string
-param aadClientSecret string
-param aadObjectId string
-param rpObjectId string
 param controlPlaneVmSize string
 param computeVmSize string
 param computeVmDiskSize int
