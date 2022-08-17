@@ -178,6 +178,7 @@ jobs:
           aadObjectId="${{ secrets.AAD_OBJECT_ID }}"
           rpObjectId="${{ secrets.ARO_SP_OB_ID }}"
           spokeVnetName="${{ env.SPOKE_VNET }}"
+          addSpRoleAssignment='no'
         deploymentName: aro-github-actions
 
   deploy_bastion:

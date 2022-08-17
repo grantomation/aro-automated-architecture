@@ -4,6 +4,8 @@ targetScope = 'subscription'
 param aadClientId string
 
 @description('The secret of an Azure Active Directory client application')
+
+@secure()
 param aadClientSecret string
 
 @description('The ObjectID of the Azure Active Directory Service Principal')
@@ -61,6 +63,7 @@ param computeVnetName string
 param computeSubnetCidr string
 
 @description('Pull secret from cloud.redhat.com. The json should be input as a string')
+@secure()
 param pullSecret string
 
 @description('Api Server Visibility')
@@ -123,6 +126,8 @@ param jumpbox_image_offer string
 param jumpbox_image_sku string
 param jumpbox_image_version string
 param adminUsername string
+
+@secure()
 param adminPassword string
 
 @description('Name for firewall public ip')
@@ -263,6 +268,7 @@ module aro_cluster '../modules/aro_cluster.bicep' = {
     fipsValidatedModules: fipsValidatedModules
     encryptionAtHost: encryptionAtHost
     rpObjectId: rpObjectId
+    addSpRoleAssignment: 'no'
   }
 }
 
