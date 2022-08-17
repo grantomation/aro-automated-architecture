@@ -55,9 +55,9 @@ $ az deployment sub create -f ./deploy_azcli/aro_enterprise.bicep --parameters .
 > :warning: This "cleanup" deployment runs in "Complete" mode and will remove ALL infrastructure previously created.
 
 ```
-$ az deployment group create -f ./modules/resource_group_cleanup.bicep --mode Complete --resource-group <insert hub resource group name here> -c
+$ az deployment group create -f ./modules/resource_group_cleanup.bicep --mode Complete --resource-group grant-aro-hub -c
 
-$ az deployment group create -f ./modules/resource_group_cleanup.bicep --mode Complete --resource-group <insert spoke resource group name here> -c
+$ az deployment group create -f ./modules/resource_group_cleanup.bicep --mode Complete --resource-group grant-aro-spoke -c
 ```
 
 # 2. Github actions deployment 
@@ -86,12 +86,14 @@ $ az group create -n $SPOKE_RG -l $LOCATION
 ```
 ### 2.1.2 Create a service principal
 
-Create a service principal that will run the github actions bicep modules. During deployment this SP will be granted an additional "User access admin" permission on the spoke resource group, this is to ensure that the ARO deployment can assign the resource provider "Red Hat OpenShift RP" permissions to the spoke resource group.
+Create a service principal that will run the github actions bicep modules. This SP will also be granted "User access admin" permission on the spoke resource group, this is to ensure that the ARO deployment can assign the resource provider "Red Hat OpenShift RP" permissions to the spoke resource group.
 
 ```
 $ export SP_NAME="<insert name for the service principal here>"
 
 $ az az ad sp create-for-rbac -n $SP_NAME --role contributor --sdk-auth --scopes "/subscriptions/$SUBSCRIPTION/resourceGroups/$SPOKE_RG" > sp.txt
+
+$ export APPID=$(cat sp.txt | jq -r .clientId)
 
 ```
 
@@ -101,8 +103,10 @@ $ az az ad sp create-for-rbac -n $SP_NAME --role contributor --sdk-auth --scopes
 $ export SCOPE_HUB=$(az group create -n $HUB_RG -l $LOCATION --query id -o tsv)
 $ export SCOPE_SPOKE=$(az group create -n $SPOKE_RG -l $LOCATION --query id -o tsv)
 
+
 $ az role assignment create --assignee $APPID --role contributor --scope $SCOPE_HUB
 $ az role assignment create --assignee $APPID --role contributor --scope $SCOPE_SPOKE
+$ az role assignment create --assignee $APPID --role "User Access Administrator" --scope $SCOPE_SPOKE
 
 ```
 

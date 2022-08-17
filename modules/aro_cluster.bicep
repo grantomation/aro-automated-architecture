@@ -30,13 +30,14 @@ param controlPlaneVnetName string
 param computeVnetName string
 param fipsValidatedModules string
 param encryptionAtHost string
+param addSpRoleAssignment string
 
 var contribRole = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
 
 resource clusterVnet 'Microsoft.Network/virtualNetworks@2021-08-01' existing = { name: spokeVnetName }
 
-resource role_for_aadObjectId 'Microsoft.Authorization/roleAssignments@2020-10-01-preview' = {
-  name: guid( resourceGroup().id, aadObjectId, contribRole)
+resource role_for_aadObjectId 'Microsoft.Authorization/roleAssignments@2020-10-01-preview' = if (addSpRoleAssignment == 'yes') {
+  name: guid(resourceGroup().id, aadObjectId, deployment().name)
   properties: {
     principalId: aadObjectId
     principalType: 'ServicePrincipal'
@@ -48,7 +49,7 @@ resource role_for_aadObjectId 'Microsoft.Authorization/roleAssignments@2020-10-0
 }
 
 resource role_for_rpObjectId 'Microsoft.Authorization/roleAssignments@2020-10-01-preview' = {
-  name: guid( resourceGroup().id, rpObjectId, contribRole)
+  name: guid(resourceGroup().id, rpObjectId)
   properties: {
     principalId: rpObjectId
     principalType: 'ServicePrincipal'
@@ -66,7 +67,7 @@ resource aro 'Microsoft.RedHatOpenShift/openShiftClusters@2022-04-01' = {
   properties: {
     clusterProfile: {
       domain: domain
-      resourceGroupId: '/subscriptions/${subscription().subscriptionId}/resourceGroups/aro-${domain}'
+      resourceGroupId: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${domain}-${clusterName}-${location}'
       pullSecret: pullSecret
       fipsValidatedModules: fipsValidatedModules
     }
