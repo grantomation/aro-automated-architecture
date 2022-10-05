@@ -26,13 +26,14 @@ param computeNodeCount int
 param apiServerVisibility string
 param ingressVisibility string
 param spokeVnetName string
-param controlPlaneVnetName string
-param computeVnetName string
+param controlPlaneSubnetName string
+param computeSubnetName string
 param fipsValidatedModules string
 param encryptionAtHost string
 param addSpRoleAssignment string
 
 var contribRole = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+param resourceGroupId string = '/subscriptions/${subscription().subscriptionId}/resourceGroups/${domain}-${clusterName}-${location}'
 
 resource clusterVnet 'Microsoft.Network/virtualNetworks@2021-08-01' existing = { name: spokeVnetName }
 
@@ -67,7 +68,7 @@ resource aro 'Microsoft.RedHatOpenShift/openShiftClusters@2022-04-01' = {
   properties: {
     clusterProfile: {
       domain: domain
-      resourceGroupId: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${domain}-${clusterName}-${location}'
+      resourceGroupId: resourceGroupId
       pullSecret: pullSecret
       fipsValidatedModules: fipsValidatedModules
     }
@@ -81,7 +82,7 @@ resource aro 'Microsoft.RedHatOpenShift/openShiftClusters@2022-04-01' = {
     }
     masterProfile: {
       vmSize: controlPlaneVmSize
-      subnetId: resourceId('Microsoft.Network/virtualNetworks/subnets', spokeVnetName, controlPlaneVnetName)
+      subnetId: resourceId('Microsoft.Network/virtualNetworks/subnets', spokeVnetName, controlPlaneSubnetName)
       encryptionAtHost: encryptionAtHost
     }
     workerProfiles: [
@@ -89,7 +90,7 @@ resource aro 'Microsoft.RedHatOpenShift/openShiftClusters@2022-04-01' = {
         name: 'worker'
         vmSize: computeVmSize
         diskSizeGB: computeVmDiskSize
-        subnetId: resourceId('Microsoft.Network/virtualNetworks/subnets', spokeVnetName, computeVnetName)
+        subnetId: resourceId('Microsoft.Network/virtualNetworks/subnets', spokeVnetName, computeSubnetName)
         count: computeNodeCount
         encryptionAtHost: encryptionAtHost
       }
@@ -110,3 +111,5 @@ resource aro 'Microsoft.RedHatOpenShift/openShiftClusters@2022-04-01' = {
     role_for_rpObjectId
   ]
 }
+
+output clusterName string = clusterName

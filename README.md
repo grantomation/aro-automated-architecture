@@ -93,7 +93,7 @@ $ export SP_NAME="<insert name for the service principal here>"
 
 $ az az ad sp create-for-rbac -n $SP_NAME --role contributor --sdk-auth --scopes "/subscriptions/$SUBSCRIPTION/resourceGroups/$SPOKE_RG" > sp.txt
 
-$ export APPID=$(cat sp.txt | jq -r .clientId)
+$ export APPID=$(az ad sp list --all --query "[?displayName == '$SP_NAME'].appId" -o tsv)
 
 ```
 
@@ -133,7 +133,7 @@ The following secrets will need to be created in the github repository as "Actio
 | AAD_CLIENT_ID | `az ad app list --display-name $SP_NAME --query [].appId -o tsv` |
 | AAD_CLIENT_SECRET | `cat sp.txt \| jq -r .clientSecret ` | 
 | AAD_OBJECT_ID | `az ad sp show --id $AAD_CLIENT_ID --query id -o tsv`  |
-| ARO_SP_OB_ID | `az ad sp list --all --query "[?appDisplayName=='Azure Red Hat OpenShift RP'].id" -o tsv` |
+| ARO_RP_OB_ID | `az ad sp list --all --query "[?appDisplayName=='Azure Red Hat OpenShift RP'].id" -o tsv` |
 | JUMPBOX_ADMIN_USER | \<insert the name of the windows user for the jumpbox\> | 
 | JUMPBOX_ADMIN_PWD | \<insert the password for the jumpbox\> | 
 | SPOKE_RG | \<insert the spoke resource group name\> | 

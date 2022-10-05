@@ -4,8 +4,8 @@ param spokeVnetCidr string
 param controlPlaneSubnetCidr string
 param computeSubnetCidr string
 param tags object
-param controlPlaneVnetName string
-param computeVnetName string
+param controlPlaneSubnetName string
+param computeSubnetName string
 param routeTableName string
 param spoke_rg string
 
@@ -26,7 +26,7 @@ resource cluster_vnet 'Microsoft.Network/virtualNetworks@2020-05-01' = {
     }
     subnets: [
       {
-        name: controlPlaneVnetName
+        name: controlPlaneSubnetName
         properties: {
           addressPrefix: controlPlaneSubnetCidr
           serviceEndpoints: [ { service: 'Microsoft.ContainerRegistry' } ]
@@ -38,7 +38,7 @@ resource cluster_vnet 'Microsoft.Network/virtualNetworks@2020-05-01' = {
         }
       }
       {
-        name: computeVnetName
+        name: computeSubnetName
         properties: {
           addressPrefix: computeSubnetCidr
           serviceEndpoints: [ { service: 'Microsoft.ContainerRegistry' } ]
