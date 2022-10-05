@@ -51,13 +51,13 @@ param spokeVnetName string
 param spokeVnetCidr string
 
 @description('Subnet name for control plane nodes')
-param controlPlaneVnetName string
+param controlPlaneSubnetName string
 
 @description('Subnet cidr for control plane nodes subnet')
 param controlPlaneSubnetCidr string
 
 @description('Subnet name for compute/worker nodes')
-param computeVnetName string
+param computeSubnetName string
 
 @description('Subnet cidr for dompute/worker node subnet')
 param computeSubnetCidr string
@@ -200,8 +200,8 @@ module spoke_networking '../modules/spoke_network.bicep' = {
     spokeVnetCidr: spokeVnetCidr
     controlPlaneSubnetCidr: controlPlaneSubnetCidr
     computeSubnetCidr: computeSubnetCidr
-    controlPlaneVnetName: controlPlaneVnetName
-    computeVnetName: computeVnetName
+    controlPlaneSubnetName: controlPlaneSubnetName
+    computeSubnetName: computeSubnetName
     tags: tags
     routeTableName: routeTableName
     spoke_rg: spoke_rg
@@ -254,8 +254,8 @@ module aro_cluster '../modules/aro_cluster.bicep' = {
     apiServerVisibility: apiServerVisibility
     ingressVisibility: ingressVisibility
     spokeVnetName: spokeVnetName
-    controlPlaneVnetName: controlPlaneVnetName
-    computeVnetName: computeVnetName
+    controlPlaneSubnetName: controlPlaneSubnetName
+    computeSubnetName: computeSubnetName
     clusterName: clusterName
     computeNodeCount: computeNodeCount
     computeVmDiskSize: computeVmDiskSize

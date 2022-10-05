@@ -11,10 +11,10 @@
       "domain": {
         "value": "aro-domain"
       },
-      "controlPlaneVnetName": {
+      "controlPlaneSubnetName": {
         "value": "controlplane"
       },
-      "computeVnetName": {
+      "computeSubnetName": {
         "value": "compute"
       },
       "apiServerVisibility": {

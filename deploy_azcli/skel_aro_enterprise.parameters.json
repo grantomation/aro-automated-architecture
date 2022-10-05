@@ -65,13 +65,13 @@
       "spokeVnetCidr": {
         "value": "10.1.0.0/16"
       },
-      "controlPlaneVnetName": {
+      "controlPlaneSubnetName": {
         "value": "controlplane"
       },
       "controlPlaneSubnetCidr": {
         "value": "10.1.0.0/23"
       },
-      "computeVnetName": {
+      "computeSubnetName": {
         "value": "compute"
       },
       "computeSubnetCidr": {
