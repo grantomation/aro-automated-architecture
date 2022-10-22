@@ -152,6 +152,7 @@ resource azfw_resource 'Microsoft.Network/azureFirewalls@2022-01-01' = {
                 'mirror.openshift.com'
                 'api.openshift.com'
                 'registry.access.redhat.com'
+                'gcr.io'
               ]
               sourceAddresses: [
                 '*'
