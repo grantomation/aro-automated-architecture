@@ -22,3 +22,5 @@ name: routeTableName
     ]
   }
 }
+
+output routeTableName string = routeTableName

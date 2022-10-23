@@ -54,3 +54,5 @@ resource cluster_vnet 'Microsoft.Network/virtualNetworks@2020-05-01' = {
     routeTable_resource
   ]
 }
+
+output spokeVnetName string = spokeVnetName

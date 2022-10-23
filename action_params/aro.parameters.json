@@ -8,6 +8,9 @@
             "dept": "openshift"
         }
       },
+      "clusterName": {
+        "value": "aro"
+      },
       "domain": {
         "value": "aro-domain"
       },
