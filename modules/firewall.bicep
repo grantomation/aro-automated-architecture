@@ -107,6 +107,9 @@ resource azfw_resource 'Microsoft.Network/azureFirewalls@2022-01-01' = {
                 '*registry-1.docker.io'
                 'apt.dockerproject.org'
                 'auth.docker.io'
+                '*googleapis.com'
+                '*gcr.io'
+                '*mcr.microsoft.com'
               ]
               sourceAddresses: [
                 '*'
@@ -149,10 +152,10 @@ resource azfw_resource 'Microsoft.Network/azureFirewalls@2022-01-01' = {
               fqdnTags: []
               targetFqdns: [
                 '*.quay.io'
+                '*quay.io'
                 'mirror.openshift.com'
                 'api.openshift.com'
                 'registry.access.redhat.com'
-                'gcr.io'
               ]
               sourceAddresses: [
                 '*'
@@ -174,6 +177,7 @@ resource azfw_resource 'Microsoft.Network/azureFirewalls@2022-01-01' = {
               fqdnTags: []
               targetFqdns: [
                 'github.com'
+                '*.githubusercontent.com'
               ]
               sourceAddresses: [
                 '*'
