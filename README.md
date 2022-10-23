@@ -15,60 +15,19 @@ Integrating ARO into existing Azure enterprise architectures can take a little m
 
 # Deployment Methods
 
-To make the deployment of ARO and the extended cloud environment as easy as possible this repo contains 2 methods for deploying the bicep modules;
-
-1. Run the bicep modules as an Azure deployment from a workstation using the Azure command line interface, or,
-
 1. Run the bicep modules in a github actions pipeline.
 
 ![Github actions pipeline](./images/github_actions.png)
 
-# 1. Azcli deployment
-
-> :warning: The user running the 'az' commands to deploy the bicep modules must have appropriate Azure IAM permissions to create a service principal, create resource groups, resources, and assign permissions to a service principal. The azcli deployment will be scoped to the subscription level. As an example; these commands work correctly if the user running them is assigned "owner" permissions to the subscription that they are deploying to. 
-
-## 1.1 Azcli Prerequisites
-
-1. A Red Hat pull secret will enable your cluster to access Red Hat container registries with additional content. Ensure that you have a pull secret and save it to the file `pull-secret.json` in the root directory of this repo.
-
-1. Create a service principal as per the [create and use a service principal documentation](https://docs.microsoft.com/en-au/azure/openshift/howto-create-service-principal?pivots=aro-azurecli).
-
-1. Copy the skeleton parameters file and change the values to suit your environment
-
-```
-$ cp ./deploy_azcli/skel_aro_enterprise.parameters.json ./deploy_azcli/aro_enterprise.parameters.json
-``` 
-
-## 1.2 Azcli Deployment
-
-Modify the location to suit your desired Azure region and then run the following command;
-
-```
-$ az login
-
-$ az deployment sub create -f ./deploy_azcli/aro_enterprise.bicep --parameters ./deploy_azcli/aro_enterprise.parameters.json --parameters pullSecret=@pull-secret.json -l australiaeast -c 
-
-```
-
-## 1.3 Azcli deployment cleanup
-
-> :warning: This "cleanup" deployment runs in "Complete" mode and will remove ALL infrastructure previously created.
-
-```
-$ az deployment group create -f ./modules/resource_group_cleanup.bicep --mode Complete --resource-group grant-aro-hub -c
-
-$ az deployment group create -f ./modules/resource_group_cleanup.bicep --mode Complete --resource-group grant-aro-spoke -c
-```
-
-# 2. Github actions deployment 
+# Github actions deployment 
 
 Using the github actions workflow the bicep modules can be deployed from a github repo. The github actions deployment will be scoped to the resource group level. This means that there will initally be a additional steps to create a service principal, resource groups and assign the appropriate permissions. These steps will only have to be run once for as long as the resource groups and service principal remain within the Azure environment. The github actions workflow will use public runners unless otherwise configured.
 
 > :warning: Please be careful about how you store secrets. It is advised to use a private repo to ensure that there is a less chance of private data exposure.
 
-## 2.1 Github actions prerequisites
+## Github actions prerequisites
 
-### 2.1.1 Create resource groups
+### Create resource groups
 
 > :warning: Try not to delete the resource groups once created or you will need to run the permissions commands again.
 
@@ -84,33 +43,33 @@ $ az group create -n $HUB_RG -l $LOCATION
 $ az group create -n $SPOKE_RG -l $LOCATION
 
 ```
-### 2.1.2 Create a service principal
+### Create a service principal
 
 Create a service principal that will run the github actions bicep modules. This SP will also be granted "User access admin" permission on the spoke resource group, this is to ensure that the ARO deployment can assign the resource provider "Red Hat OpenShift RP" permissions to the spoke resource group.
 
 ```
 $ export SP_NAME="<insert name for the service principal here>"
 
-$ az az ad sp create-for-rbac -n $SP_NAME --role contributor --sdk-auth --scopes "/subscriptions/$SUBSCRIPTION/resourceGroups/$SPOKE_RG" > sp.txt
+$ az ad sp create-for-rbac -n $SP_NAME --role contributor --sdk-auth --scopes "/subscriptions/$SUBSCRIPTION/resourceGroups/$SPOKE_RG" > sp.txt
 
-$ export APPID=$(az ad sp list --all --query "[?displayName == '$SP_NAME'].appId" -o tsv)
+$ export AAD_CLIENT_ID=$(az ad sp list --all --query "[?displayName == '$SP_NAME'].appId" -o tsv)
 
 ```
 
-### 2.1.3 Scope the service principal's permissions to the hub and spoke resource groups
+### Scope the service principal's permissions to the hub and spoke resource groups
 
 ```
 $ export SCOPE_HUB=$(az group create -n $HUB_RG -l $LOCATION --query id -o tsv)
 $ export SCOPE_SPOKE=$(az group create -n $SPOKE_RG -l $LOCATION --query id -o tsv)
 
 
-$ az role assignment create --assignee $APPID --role contributor --scope $SCOPE_HUB
-$ az role assignment create --assignee $APPID --role contributor --scope $SCOPE_SPOKE
-$ az role assignment create --assignee $APPID --role "User Access Administrator" --scope $SCOPE_SPOKE
+$ az role assignment create --assignee $AAD_CLIENT_ID --role contributor --scope $SCOPE_HUB
+$ az role assignment create --assignee $AAD_CLIENT_ID --role contributor --scope $SCOPE_SPOKE
+$ az role assignment create --assignee $AAD_CLIENT_ID --role "User Access Administrator" --scope $SCOPE_SPOKE
 
 ```
 
-### 2.1.4 Modify parameter
+### Modify parameter
 
 1. Modify the parameters found in `./action_params/*.json` to suit your environment.
 
@@ -122,7 +81,7 @@ $ az role assignment create --assignee $APPID --role "User Access Administrator"
     * ROUTE_TABLE_NAME (name of the route table), and,
     * CLUSTER_NAME (the name of the ARO cluster)
 
-### 2.1.5 Create github encrypted secrets to be used by github actions
+### Create github encrypted secrets to be used by github actions
 
 The following secrets will need to be created in the github repository as "Action Secrets". Go to your repo > select settings > select secrets > select Actions > select "New repository secret".
 
@@ -130,7 +89,7 @@ The following secrets will need to be created in the github repository as "Actio
 | --- | --- | 
 | AZURE_SUBSCRIPTION | ` az account show --query id -o tsv ` | 
 | AZURE_CREDENTIALS | copy the contents of sp.txt here. Json format will work | 
-| AAD_CLIENT_ID | `az ad app list --display-name $SP_NAME --query [].appId -o tsv` |
+| AAD_CLIENT_ID | `az ad sp list --all --query "[?displayName == '$SP_NAME'].appId" -o tsv` |
 | AAD_CLIENT_SECRET | `cat sp.txt \| jq -r .clientSecret ` | 
 | AAD_OBJECT_ID | `az ad sp show --id $AAD_CLIENT_ID --query id -o tsv`  |
 | ARO_RP_OB_ID | `az ad sp list --all --query "[?appDisplayName=='Azure Red Hat OpenShift RP'].id" -o tsv` |
@@ -143,13 +102,13 @@ The following secrets will need to be created in the github repository as "Actio
 > :Note: The pull secret should have the following syntax prior to adding it to the github secret `{\"auths\":{\"cloud.openshift.com\":{\"auth\":\"XXXXXXXXXX\" ...`
 
 
-## 2.2 Github actions Deployment
+## Github actions Deployment
 
 To run the github actions to deploy the environment select the following;
 
 ![Run ARO github action](./images/run_aro_action.png)
 
-## 2.3 Github actions Cleanup
+## Github actions Cleanup
 
 To run the github actions to deploy the environment select the following;
 
