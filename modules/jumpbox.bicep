@@ -8,12 +8,13 @@ param jumpbox_image_offer string
 param jumpbox_image_sku string
 param jumpbox_image_version string
 param adminUsername string
+param blobEndpoint string
+param blobContainerName string
+param fileName string
+param identityId string
 
 @secure()
 param adminPassword string
-
-param clusterName string
-param spoke_rg string
 
 var nsg_name = '${jumpbox_vm_name}NSG'
 var nsg_ip_config_name = 'ipconfig${jumpbox_vm_name}'
@@ -56,6 +57,13 @@ resource networkInterface_resource 'Microsoft.Network/networkInterfaces@2020-11-
 resource jumpbox_resource 'Microsoft.Compute/virtualMachines@2021-03-01' = {
   name: jumpbox_vm_name
   location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identityId}': {
+      }
+    }
+  }
   properties: {
     hardwareProfile: {
       vmSize: jumpbox_vm_size
@@ -107,9 +115,9 @@ resource customScriptExtension 'Microsoft.Compute/virtualMachines/extensions@202
     }
     protectedSettings: {
       fileUris: [
-        'https://raw.githubusercontent.com/grantomation/aro-cse/master/openshift.ps1'
+        '${blobEndpoint}${blobContainerName}/${fileName}'
       ]
-      commandToExecute: 'powershell -ExecutionPolicy Unrestricted -File openshift.ps1 -clusterName ${clusterName} -clusterRG ${spoke_rg}'
+      commandToExecute: 'powershell -ExecutionPolicy Unrestricted -File openshift.ps1'
     }
   }
 }
