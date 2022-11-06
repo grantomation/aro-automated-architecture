@@ -1,27 +1,70 @@
-Deploying Azure Red Hat OpenShift (ARO) is a fairly straightforward process. By following the [official documentation](https://docs.microsoft.com/en-au/azure/openshift/intro-openshift), creating the required Azure infrastructure and running the deployment command, a highly available OpenShift cluster will become available and ready to run containerised workloads in approximately 30 minutes.
+Deploying Azure Red Hat OpenShift (ARO) is a fairly straightforward process. By following the [official documentation](https://docs.microsoft.com/en-au/azure/openshift/intro-openshift), creating the required Azure infrastructure and running the deployment command, a highly available OpenShift cluster will become available and ready to run containerised workloads in approximately 30-40 minutes.
 
 Integrating ARO into existing Azure enterprise architectures can take a little more time, as networking, routing and traffic rules need to be created. Inspired by the [ARO reference architecture](https://github.com/UmarMohamedUsman/aro-reference-architecture), this repo contains bicep modules which will deploy ARO and other common resources found in enterprise Azure environments using a consistent, repeatable deployment method and will take approximately 45 minutes to complete. 
 
 # Architecture
-- 2 resource groups forming hub/spoke architecture. Networking resources within these resource groups are peered. 
 
-    1. A Spoke resource group will contain the private Azure Red Hat OpenShift and associated networking requirements
-    1. Hub resource group will contain Azure native services commonly seen in enterprise architectures
-        - Azure Firewall
-            - Firewall rules default to permit application traffic described in the [restrict egress traffic documentation](https://docs.microsoft.com/en-au/azure/openshift/howto-restrict-egress). These can be configured to be more restrictive in the firewall module found at `./modules/firewall.bicep`.
-        - Azure Bastion Service
-        - A virtual machine to be used as a jumpbox into the private network. 
-            - A custom script extension (cse) is used by the jumpbox deployment to configure software for interacting with OpenShift. This cse is external to this repo and can be [found here](https://github.com/grantomation/aro-cse).
+This deployment is a hub/spoke architecture. The Hub resource group will deploy and configure essential Azure resources required for the depoyment of a private ARO cluster. The ARO cluster and its virtual network will be located in the spoke resource group. This architecture should allow further ARO deployments as part of another spoke resource group (not deployed here). As part of the ARO deployment another resource group will be created which will contain the non-configurable resources of the ARO cluster such as control plane and worker node virtual machines, load balancers, network interfaces etc.
 
-# Deployment Methods
+## Hub Resource Group
 
-1. Run the bicep modules in a github actions pipeline.
+In the Hub resource group the following resources are deployed;
+
+### Hub virtual Network
+
+The hub vnet contains all the subnets for the hub services. This includes firwall, bastion service, and container registries. This hub network is peered with the spoke's virtual network.
+
+### Keyvault and Managed Identity
+
+A keyvault is created which will store the secrets produced by the ARO cluster. The managed identity is created to be used by the Jumpbox and Azure container instance to access the secrets in the keyvault. The container instance will configure the ARO cluster using yaml and OC commnads, whereas the jumpbox will use the managed identity to populate a script which will make logging in from a resource on the network a lot faster.
+
+### Azure container Registry
+
+A container based on the Red Hat universal base image (UBI) is built which can be used to configure the private ARO cluster. The Azure container registry will store the built image which is pulled when the container instance is deployed in the pipeline.
+
+### Storage Account
+
+The storage account is deployed with a blob that contains a custom script extension (CSE). This custom script extension is used to configure the Windows jump box with tooling that makes it easier to connect to and configure the private Azure Container registry.
+
+### Firewall
+
+The firewall will be used to configure inbound and outbound traffic from the private ARO cluster. Firewall rules will need to be configured to allow pulling containers from external image repositories. Given that new ARO clusters (OpenShift 4.6+) now use a feature called "egress lockdown" the cluster can still scale as expected as all OpenShift core containers and Red Hat Core OS (RHCOS) images are collected from the service's resources via the deployed private link.
+
+### Bastion Service and Jumpbox
+
+A jumpbox is deployed to provide access to the private network. This is protected by the Azure Bastion service whih also allows for a HTML5 remote desktop session.
+
+### Container Build and Instance
+
+As part of the deployment process, a pipeline job will build a contianer image which contains tools to help configure the ARO private cluster. This container will be pushed to the Azure container registry and then pulled by the Azure container instance. The Azure container instance will deploy to a subnet within the hub and will have connectivity to the ARO private cluster via peering.
+
+### Secrets in Keyvault
+
+The Azure keyvault will store the kubeadmin password and api endpoint of the private ARO cluster. This keyvault will then be used by a managed identity attached to the jumpbox and container instances to access and configure the cluster.
+
+## Spoke Resource Group
+
+In the Spoke resource group the following resources are deployed;
+
+### Spoke Network with Peering
+
+This virtual network will contain the required ARO control plane and worker subnets. This vnet is peered to the vnet in the hub.
+
+### User Defined Routing (UDR)
+
+A route is created which will direct all traffic to and from the ARO cluster to the Azure firewall. This UDR is applied to both the ARO control plane and ARO worker subnets.
+
+### ARO Cluster
+
+Finally the ARO cluster is created which will allow you to deploy your containerised workloads in a secure manner.
+
+# Deployment Method - Github Actions
+
+1. This repo has been designed to run bicep modules for the above resources in a github actions pipeline using public runners. It is advised to copy this repo to a prviate github repo so that you can deploy from a private github repository.
 
 ![Github actions pipeline](./images/github_actions.png)
 
-# Github actions deployment 
-
-Using the github actions workflow the bicep modules can be deployed from a github repo. The github actions deployment will be scoped to the resource group level. This means that there will initally be a additional steps to create a service principal, resource groups and assign the appropriate permissions. These steps will only have to be run once for as long as the resource groups and service principal remain within the Azure environment. The github actions workflow will use public runners unless otherwise configured.
+The service principal used for the github actions deployment will be scoped to the resource group level. This means that there will initally be a additional steps to create a service principal, resource groups and assign the appropriate permissions. These steps will only have to be run once for as long as the resource groups and service principal remain within the Azure environment. The github actions workflow will use public runners unless otherwise configured.
 
 > :warning: Please be careful about how you store secrets. It is advised to use a private repo to ensure that there is a less chance of private data exposure.
 
@@ -43,6 +86,9 @@ $ az group create -n $HUB_RG -l $LOCATION
 $ az group create -n $SPOKE_RG -l $LOCATION
 
 ```
+
+Alternatively I have created a shell script called `ent_rg_create.sh` which will run all of these commands for you. You will need to change the variables at the top of the file to suit your environment.
+
 ### Create a service principal
 
 Create a service principal that will run the github actions bicep modules. This SP will also be granted "User access admin" permission on the spoke resource group, this is to ensure that the ARO deployment can assign the resource provider "Red Hat OpenShift RP" permissions to the spoke resource group.
@@ -75,15 +121,20 @@ $ az role assignment create --assignee $AAD_CLIENT_ID --role "User Access Admini
 
 1. Modify the parameters found in `./github/workflows/action_deploy_aro_enterprise.yml` to suit your environment.
     * LOCATION (location for resources)
-    * HUB_VNET (name of the hub vnet)
-    * SPOKE_VNET (name of the spoke vnet)
-    * FW_PRIVATE_IP (private IP of the Azure firewall - defaults to 10.0.0.4)
-    * ROUTE_TABLE_NAME (name of the route table), and,
-    * CLUSTER_NAME (the name of the ARO cluster)
+    * ACR_USERNAME (the default user for Azure container registry)
+    * CONTAINER_BUILD NAME (the desired name of the configuration container stored in the Azure container registry)
 
 ### Create github encrypted secrets to be used by github actions
 
 The following secrets will need to be created in the github repository as "Action Secrets". Go to your repo > select settings > select secrets > select Actions > select "New repository secret".
+
+Alternatively, I have created a shell script called `gh_secrets_create.sh` which uses the github command line to create the secrets for you. Before running this file you would have needed to do the following;
+
+* Install and logged in to the "gh" command line,
+* Logged into gh cli and ensured that you are interacting with the correct github repository,
+* Changed the variables at the top of `gh_secrets_create.sh` to match your environment.
+
+### Manually populate github secrets;
 
 | Secret Name | Command to run to get correct value for secret | 
 | --- | --- | 
@@ -114,11 +165,26 @@ To run the github actions to deploy the environment select the following;
 
 ![Cleanup ARO resources](./images/cleanup_action.png)
 
+### Cleanup Azure resource groups
+
+To complete a full cleanup of Azure resources I have created a .
+
+An azure keyvault stays in a deleted state for approximately 90 days after deletion. This script will also purge the keyvault to ensure that there are no failures on the next ARO deployment.
+
+# OpenShift configuration
+
+Configuration of the OpenShift cluster for day2 (oauth providers, storage classes, or OpenShift operators) is performed using the `openshift_operators/openshift_config.sh` script. This script uses a managed identity to pull the ARO kubeadmin password and api endpoint from Azure keyvault and then runs commands against the ARO cluster with kubernetes cluster admin privileges.
+
+Whilst this script works for initial configuration of a private cluster, in a production environment it is recommended to use a kubernetes configuration tool such as Red Hat Advanced Cluster Management (RHACM).
+
+# Jumpbox configuration
+
+The Windows jumpbox is configured using the custom script extension found in `config_jumpbox/openshift.ps1`. It deploys tools which will be useful for interacting with the OpenShift cluster. None of the tools in this script are mandatory, so please feel free to change in order to match your environment.
+
 # Upcoming Features
-* Day 2 - Integrate Azure Active Directory for OpenShift login
-* Day 2 - Deploy an application to OpenShift
-* Day 2 - Configure useful OpenShift operators
 * Configure Azure logging integration
 * Learn more about Bicep, Azure and Github actions and continuously improve the code
+* VPN or A cloud shell deployed to a private network
+* Web Application Firewall (WAF) or Azure front door
 
 # **Pull Requests are welcome!**

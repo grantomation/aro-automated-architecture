@@ -6,6 +6,80 @@ env:
   CONTAINER_BUILD_NAME: aro_config:1
 
 jobs: 
+  vault_and_identity:
+    runs-on: ubuntu-latest
+    outputs:
+      identityClientId: ${{ steps.identity.outputs.identityClientId }}
+      identityObjectId: ${{ steps.identity.outputs.identityObjectId }}
+      identityName: ${{ steps.identity.outputs.identityName }}
+      keyVaultUri: ${{ steps.keyvault.outputs.keyVaultUri }}
+      keyVaultName: ${{ steps.keyvault.outputs.keyVaultName }}
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v3
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: create identity
+      uses: azure/arm-deploy@v1
+      id: identity
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/managed-identity.bicep
+        parameters: >
+          ./action_params/managed-identity.parameters.json
+          location="${{ env.LOCATION }}"
+        deploymentName: identity-github-actions
+
+    - name: create Keyvault
+      uses: azure/arm-deploy@v1
+      id: keyvault
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/keyvault.bicep
+        parameters: >
+          ./action_params/keyvault.parameters.json
+          location="${{ env.LOCATION }}"
+          identityObjectId=${{ steps.identity.outputs.identityObjectId }}
+          spObjectId=${{ secrets.AAD_OBJECT_ID }}
+        deploymentName: keyvault-github-actions
+
+  storage_account:
+    runs-on: ubuntu-latest
+    outputs:
+      blobEndpoint: ${{ steps.storage.outputs.blobEndpoint }}
+      blobContainerName: ${{ steps.storage.outputs.blobContainerName }}
+      fileName: ${{ steps.storage.outputs.fileName }}
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v3
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: create storage account
+      uses: azure/arm-deploy@v1
+      id: storage
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/storage.bicep
+        parameters: >
+          ./action_params/storage.parameters.json
+          location="${{ env.LOCATION }}"
+          aadObjectId="${{ secrets.AAD_OBJECT_ID }}"
+        deploymentName: storage-github-actions
+
   hub_networking:
     runs-on: ubuntu-latest
     outputs:
@@ -189,6 +263,53 @@ jobs:
           addSpRoleAssignment='no'
         deploymentName: aro-github-actions
 
+  write_secrets:
+    needs: [vault_and_identity, deploy_aro]
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v3
+    
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get ARO cluster details
+      run: |
+          ARO_PWD="$(az aro list-credentials -n ${{ needs.deploy_aro.outputs.clusterName }} -g ${{ secrets.SPOKE_RG }} --query kubeadminPassword -o tsv)"
+          ARO_API="$(az aro show -n ${{ needs.deploy_aro.outputs.clusterName }} -g ${{ secrets.SPOKE_RG }} --query apiserverProfile.url -o tsv)"
+          
+          echo "ARO_PWD=${ARO_PWD}" >> $GITHUB_ENV
+          echo "ARO_API=${ARO_API}" >> $GITHUB_ENV
+      shell: bash
+
+    - name: api_secret
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/secret.bicep
+        parameters: > 
+          keyVaultName="${{ needs.vault_and_identity.outputs.keyVaultName }}"
+          secretName="aroApiServer"
+          secretValue="${{ env.ARO_API }}"
+        deploymentName: secret-github-actions
+
+    - name: kubeadmin_secret
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/secret.bicep
+        parameters: > 
+          keyVaultName="${{ needs.vault_and_identity.outputs.keyVaultName }}"
+          secretName="aroKubeAdminPassword"
+          secretValue="${{ env.ARO_PWD }}"
+        deploymentName: secret-github-actions
+
   deploy_bastion:
     needs: hub_networking
     runs-on: ubuntu-latest
@@ -215,7 +336,7 @@ jobs:
         deploymentName: bastion-github-actions
 
   deploy_jumpbox:
-    needs: [hub_networking, deploy_aro]
+    needs: [vault_and_identity, storage_account, hub_networking]
     runs-on: ubuntu-latest
     steps:
     - name: checkout code
@@ -225,6 +346,12 @@ jobs:
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get Identity details
+      run: |
+          IDENTITY_ID="$(az identity show -n ${{ needs.vault_and_identity.outputs.identityName }} -g ${{ secrets.HUB_RG }} --query id -o tsv)"
+          echo "IDENTITY_ID=${IDENTITY_ID}" >> $GITHUB_ENV
+      shell: bash
 
     - name: deploy_jumpbox
       uses: azure/arm-deploy@v1
@@ -236,9 +363,115 @@ jobs:
         parameters: > 
           ./action_params/jumpbox.parameters.json
           location="${{ env.LOCATION }}"
-          spoke_rg="${{ secrets.SPOKE_RG }}"
-          clusterName="${{ needs.deploy_aro.outputs.clusterName}}"
           hubVnetName="${{ needs.hub_networking.outputs.hubVnetName }}"
           adminUsername="${{ secrets.JUMPBOX_ADMIN_USER }}" 
           adminPassword="${{ secrets.JUMPBOX_ADMIN_PWD }}"
+          blobEndpoint="${{ needs.storage_account.outputs.blobEndpoint }}"
+          blobContainerName="${{ needs.storage_account.outputs.blobContainerName }}"
+          fileName="${{ needs.storage_account.outputs.fileName }}"
+          identityId="${{ env.IDENTITY_ID }}"
         deploymentName: jumpbox-github-actions
+
+  deploy_acr:
+    runs-on: ubuntu-latest
+    outputs:
+      acrName: ${{ steps.acr.outputs.acrName }}
+      loginServer: ${{ steps.acr.outputs.loginServer }}
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v3
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: deploy_acr
+      uses: azure/arm-deploy@v1
+      id: acr
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/acr.bicep
+        parameters: > 
+          ./action_params/acr.parameters.json
+          location="${{ env.LOCATION }}" 
+        deploymentName: acr-github-actions
+
+  build_and_push:
+    runs-on: ubuntu-latest
+    needs: [vault_and_identity, deploy_acr]
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v3
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: acr token
+      run: |      
+          ACR_TOKEN="$(az acr login --name ${{ needs.deploy_acr.outputs.acrName }} --expose-token --query accessToken -o tsv)"
+          echo "ACR_TOKEN=${ACR_TOKEN}" >> $GITHUB_ENV
+      shell: bash
+
+    - name: login to acr
+      uses: azure/docker-login@v1
+      with: 
+        login-server: ${{ needs.deploy_acr.outputs.loginServer }}
+        username: ${{ env.ACR_USERNAME }}
+        password: ${{ env.ACR_TOKEN }}
+
+    - name: build and push container
+      run: | 
+        docker build . -f ./config_container/Dockerfile -t ${{ needs.deploy_acr.outputs.loginServer }}/${{ env.CONTAINER_BUILD_NAME }}
+        docker push ${{ needs.deploy_acr.outputs.loginServer }}/${{ env.CONTAINER_BUILD_NAME }}
+
+  deploy_aci:
+    runs-on: ubuntu-latest
+    needs: [vault_and_identity, hub_networking, write_secrets, deploy_aro, deploy_acr, build_and_push]
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v3
+
+    - name: azure login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get ARO cluster details
+      run: |
+          ARO_PWD="$(az aro list-credentials -n ${{ needs.deploy_aro.outputs.clusterName }} -g ${{ secrets.SPOKE_RG }} --query kubeadminPassword -o tsv)"
+          ARO_API="$(az aro show -n ${{ needs.deploy_aro.outputs.clusterName }} -g ${{ secrets.SPOKE_RG }} --query apiserverProfile.url -o tsv)"
+          ACR_TOKEN="$(az acr login --name ${{ needs.deploy_acr.outputs.acrName }} --expose-token --query accessToken -o tsv)"
+          IDENTITY_ID="$(az identity show -n ${{ needs.vault_and_identity.outputs.identityName }} -g ${{ secrets.HUB_RG }} --query id -o tsv)"
+
+          echo "ARO_PWD=${ARO_PWD}" >> $GITHUB_ENV
+          echo "ARO_API=${ARO_API}" >> $GITHUB_ENV
+          echo "ACR_TOKEN=${ACR_TOKEN}" >> $GITHUB_ENV
+          echo "IDENTITY_ID=${IDENTITY_ID}" >> $GITHUB_ENV
+      shell: bash
+
+    - name: deploy_aci
+      uses: azure/arm-deploy@v1
+      timeout-minutes: 10
+      with:
+        scope: resourcegroup
+        subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION }}
+        resourceGroupName: ${{ secrets.HUB_RG }}
+        template: ./modules/aci.bicep
+        parameters: > 
+          ./action_params/aci.parameters.json
+          location="${{ env.LOCATION }}" 
+          loginServer="${{ needs.deploy_acr.outputs.loginServer }}"
+          containerBuildName="${{ env.CONTAINER_BUILD_NAME }}"
+          aciSubnetName="${{ needs.hub_networking.outputs.aciSubnetName }}"
+          hubVnetName="${{ needs.hub_networking.outputs.hubVnetName }}"
+          acrToken="${{ env.ACR_TOKEN }}"
+          acrUserName="${{ env.ACR_USERNAME }}"
+          identityId="${{ env.IDENTITY_ID }}"
+          identityClientId="${{ needs.vault_and_identity.outputs.identityClientId }}"
+          keyVaultUri="${{ needs.vault_and_identity.outputs.keyVaultUri }}"
+        deploymentName: aci-github-actions 
