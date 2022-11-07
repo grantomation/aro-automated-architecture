@@ -167,7 +167,7 @@ To run the github actions to deploy the environment select the following;
 
 ### Cleanup Azure resource groups
 
-To complete a full cleanup of Azure resources I have created a .
+To complete a full cleanup of Azure resources I have created a shell script called `ent_rg_delete.sh` which will run resource group delete commands for you. You will need to change the variables at the top of the file to suit your environment.
 
 An azure keyvault stays in a deleted state for approximately 90 days after deletion. This script will also purge the keyvault to ensure that there are no failures on the next ARO deployment.
 
