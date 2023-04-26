@@ -1,3 +1,12 @@
+> **Warning** 
+> I have made major architectural changes in a new version of this ARO landing Zone deployment and so I have decided to create a new repoistory and archive this one. Please see my new repository [Azure Red Hat OpenShift (ARO) Landing Zone](https://github.com/grantomation/azure-red-hat-openshift-landing-zone)
+
+# This repository is now archived
+Please see [Azure Red Hat OpenShift (ARO) Landing Zone](https://github.com/grantomation/azure-red-hat-openshift-landing-zone) for the new architecture.
+
+Thanks
+
+
 Deploying Azure Red Hat OpenShift (ARO) is a fairly straightforward process. By following the [official documentation](https://docs.microsoft.com/en-au/azure/openshift/intro-openshift), creating the required Azure infrastructure and running the deployment command, a highly available OpenShift cluster will become available and ready to run containerised workloads in approximately 30-40 minutes.
 
 Integrating ARO into existing Azure enterprise architectures can take a little more time, as networking, routing and traffic rules need to be created. Inspired by the [ARO reference architecture](https://github.com/UmarMohamedUsman/aro-reference-architecture), this repo contains bicep modules which will deploy ARO and other common resources found in enterprise Azure environments using a consistent, repeatable deployment method and will take approximately 45 minutes to complete. 
